@@ -6,6 +6,10 @@ end
 
 function agent_step!(agent, model)
     move_agent!(agent, model, 1.0)
+    
+    if agent.id == 1
+        println("Carro 1 - Posición: ", agent.pos)
+    end
 end
 
 function initialize_model(extent = (25, 10))
