@@ -11,20 +11,28 @@ route("/simulations", method = POST) do
     id = string(uuid1())
     instances[id] = model
 
-    # Para Pregunta 1: devolver sem en lugar de autos
+    cars = []
     trafficLights = []
+    
     for agent in allagents(model)
-        push!(trafficLights, Dict(
-            "id" => agent.id,
-            "pos" => [agent.pos[1], agent.pos[2]],
-            "color" => string(agent.color),  
-            "timer" => agent.timer,
-            "is_vertical" => agent.is_vertical
-        ))
+        if agent isa Car
+            push!(cars, Dict(
+                "id" => agent.id,
+                "pos" => [agent.pos[1], agent.pos[2]],
+                "vel" => [agent.vel[1], agent.vel[2]]
+            ))
+        elseif agent isa TrafficLight
+            push!(trafficLights, Dict(
+                "id" => agent.id,
+                "pos" => [agent.pos[1], agent.pos[2]],
+                "color" => string(agent.color),
+                "timer" => agent.timer,
+                "is_vertical" => agent.is_vertical
+            ))
+        end
     end
     
-    json(Dict("Location" => "/simulations/$id", "trafficLights" => trafficLights))
-
+    json(Dict("Location" => "/simulations/$id", "cars" => cars, "trafficLights" => trafficLights))
 end
 
 route("/simulations/:id") do
@@ -32,21 +40,28 @@ route("/simulations/:id") do
     model = instances[payload(:id)]
     run!(model, 1)
     
-
+    cars = []
     trafficLights = []
+    
     for agent in allagents(model)
-        push!(trafficLights, Dict(
-            "id" => agent.id,
-            "pos" => [agent.pos[1], agent.pos[2]],
-            "color" => string(agent.color),  
-            "timer" => agent.timer,
-            "is_vertical" => agent.is_vertical
-        ))
+        if agent isa Car
+            push!(cars, Dict(
+                "id" => agent.id,
+                "pos" => [agent.pos[1], agent.pos[2]],
+                "vel" => [agent.vel[1], agent.vel[2]]
+            ))
+        elseif agent isa TrafficLight
+            push!(trafficLights, Dict(
+                "id" => agent.id,
+                "pos" => [agent.pos[1], agent.pos[2]],
+                "color" => string(agent.color),
+                "timer" => agent.timer,
+                "is_vertical" => agent.is_vertical
+            ))
+        end
     end
     
-    json(Dict("trafficLights" => trafficLights))
-    
-  
+    json(Dict("cars" => cars, "trafficLights" => trafficLights))
 end
 
 
