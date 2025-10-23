@@ -2,26 +2,26 @@ using Agents, Random
 using StaticArrays: SVector
 using Distributions
 
-
 @agent struct Car(ContinuousAgent{2,Float64})
     accelerating::Bool = true
+    max_speed::Float64 = 1.0
 end
 
-
 @agent struct TrafficLight(ContinuousAgent{2,Float64})
-    color::Symbol = :green  # :green, :yellow, :red
+    color::Symbol = :green
     timer::Int = 0
     is_vertical::Bool = false
 end
-
 
 const GREEN_TIME = 10
 const YELLOW_TIME = 4
 const RED_TIME = 14
 
-const CAR_SPEED = 0.5  
-const STOP_DISTANCE = 2.0  
-
+const ACCELERATION = 0.05
+const DECELERATION = 0.1
+const MIN_SPEED = 0.0
+const STOP_DISTANCE = 2.5
+const CAR_DETECTION_DISTANCE = 1.5
 
 function change_light_color!(light::TrafficLight)
     if light.color == :green
@@ -48,24 +48,53 @@ function trafficlight_step!(light::TrafficLight, model)
     end
 end
 
-
 function find_traffic_light_ahead(car::Car, model)
-    """Busca si hay un semáforo adelante del auto"""
+    car_on_horizontal = abs(car.pos[2] - 10.0) < 1.0
+    car_on_vertical = abs(car.pos[1] - 10.0) < 1.0
+    
     for agent in allagents(model)
-        if agent isa TrafficLight && !agent.is_vertical
-            
-            if agent.pos[1] > car.pos[1] && 
-               abs(agent.pos[2] - car.pos[2]) < 1.0 &&  
-               agent.pos[1] - car.pos[1] < STOP_DISTANCE  
-                return agent
+        if agent isa TrafficLight
+            if car_on_horizontal && !agent.is_vertical
+                if agent.pos[1] > car.pos[1] && 
+                   abs(agent.pos[2] - car.pos[2]) < 1.0 &&
+                   agent.pos[1] - car.pos[1] < STOP_DISTANCE
+                    return agent
+                end
+            elseif car_on_vertical && agent.is_vertical
+                if agent.pos[2] > car.pos[2] && 
+                   abs(agent.pos[1] - car.pos[1]) < 1.0 &&
+                   agent.pos[2] - car.pos[2] < STOP_DISTANCE
+                    return agent
+                end
             end
         end
     end
     return nothing
 end
 
-function should_stop(car::Car, model)
-    """Determina si el auto debe detenerse"""
+function find_car_ahead(car::Car, model)
+    car_on_horizontal = abs(car.pos[2] - 10.0) < 1.0
+    car_on_vertical = abs(car.pos[1] - 10.0) < 1.0
+    
+    for agent in allagents(model)
+        if agent isa Car && agent.id != car.id
+            if car_on_horizontal && abs(agent.pos[2] - car.pos[2]) < 1.0
+                if agent.pos[1] > car.pos[1] && 
+                   agent.pos[1] - car.pos[1] < CAR_DETECTION_DISTANCE
+                    return agent
+                end
+            elseif car_on_vertical && abs(agent.pos[1] - car.pos[1]) < 1.0
+                if agent.pos[2] > car.pos[2] && 
+                   agent.pos[2] - car.pos[2] < CAR_DETECTION_DISTANCE
+                    return agent
+                end
+            end
+        end
+    end
+    return nothing
+end
+
+function should_stop_for_light(car::Car, model)
     light = find_traffic_light_ahead(car, model)
     
     if light !== nothing
@@ -77,17 +106,40 @@ function should_stop(car::Car, model)
     return false
 end
 
+function should_decelerate(car::Car, model)
+    if should_stop_for_light(car, model)
+        return true
+    end
+    
+    car_ahead = find_car_ahead(car, model)
+    if car_ahead !== nothing
+        return true
+    end
+    
+    return false
+end
+
 function car_step!(car::Car, model)
-    """Actualiza el movimiento del auto"""
-    if should_stop(car, model)
-        car.vel = (0.0, 0.0)
+    current_speed = sqrt(car.vel[1]^2 + car.vel[2]^2)
+    
+    if should_decelerate(car, model)
+        new_speed = max(MIN_SPEED, current_speed - DECELERATION)
+        car.accelerating = false
     else
-        car.vel = (CAR_SPEED, 0.0)
+        new_speed = min(car.max_speed, current_speed + ACCELERATION)
+        car.accelerating = true
+    end
+    
+    if abs(car.vel[1]) > abs(car.vel[2])
+        direction = sign(car.vel[1])
+        car.vel = (new_speed * direction, 0.0)
+    else
+        direction = sign(car.vel[2])
+        car.vel = (0.0, new_speed * direction)
     end
     
     move_agent!(car, model, 1.0)
 end
-
 
 function agent_step!(agent::TrafficLight, model)
     trafficlight_step!(agent, model)
@@ -97,12 +149,10 @@ function agent_step!(agent::Car, model)
     car_step!(agent, model)
 end
 
-
-function initialize_model(extent = (20, 20))
+function initialize_model(cars_per_street = 5, extent = (20, 20))
     space2d = ContinuousSpace(extent; spacing = 0.5, periodic = true)
     rng = Random.MersenneTwister()
     
-   
     model = StandardABM(
         Union{Car, TrafficLight}, 
         space2d; 
@@ -113,7 +163,6 @@ function initialize_model(extent = (20, 20))
     
     center_x = extent[1] / 2
     center_y = extent[2] / 2
-    
     
     add_agent!(
         TrafficLight,
@@ -135,61 +184,81 @@ function initialize_model(extent = (20, 20))
         is_vertical = true
     )
     
-
-    if rand() < 0.5
-        car_x = rand(Uniform(2.0, center_x - 4))
-    else
-       
-        car_x = rand(Uniform(2.0, center_x - 4))
+    for i in 1:cars_per_street
+        car_x = 2.0 + (i - 1) * ((center_x - 5) / cars_per_street)
+        car_y = center_y
+        initial_speed = rand(Uniform(0.3, 0.8))
+        max_speed = rand(Uniform(0.8, 1.2))
+        
+        add_agent!(
+            Car,
+            SVector{2, Float64}(car_x, car_y),
+            model;
+            vel = SVector{2, Float64}(initial_speed, 0.0),
+            accelerating = true,
+            max_speed = max_speed
+        )
     end
     
-    car_y = center_y  
-    
-    add_agent!(
-        Car,
-        SVector{2, Float64}(car_x, car_y),
-        model;
-        vel = SVector{2, Float64}(CAR_SPEED, 0.0),
-        accelerating = true
-    )
+    for i in 1:cars_per_street
+        car_x = center_x
+        car_y = 2.0 + (i - 1) * ((center_y - 5) / cars_per_street)
+        initial_speed = rand(Uniform(0.3, 0.8))
+        max_speed = rand(Uniform(0.8, 1.2))
+        
+        add_agent!(
+            Car,
+            SVector{2, Float64}(car_x, car_y),
+            model;
+            vel = SVector{2, Float64}(0.0, initial_speed),
+            accelerating = true,
+            max_speed = max_speed
+        )
+    end
     
     model
 end
 
-
-
-println("=== SIMULACIÓN CON UN AUTO Y SEMÁFOROS (Pregunta 2) ===\n")
-println("Configuración:")
-println("  - Espacio: 20x20 (cuadrado)")
-println("  - 1 auto en calle horizontal")
-println("  - Auto se detiene ante semáforo amarillo/rojo")
-println("  - Scheduler: ByType (semáforos primero, luego autos)\n")
-
-model = initialize_model()
-
-for i in 0:50
-    println("--- Paso $i ---")
-    
-    for agent in allagents(model)
-        if agent isa TrafficLight
-            direction = agent.is_vertical ? "VERTICAL  " : "HORIZONTAL"
-            color_name = agent.color == :green ? "VERDE   " : 
-                        agent.color == :yellow ? "AMARILLO" : "ROJO    "
-            println("  Semáforo $direction: $color_name (tiempo: $(agent.timer))")
-        end
-    end
+function calculate_average_speed(model)
+    total_speed = 0.0
+    car_count = 0
     
     for agent in allagents(model)
         if agent isa Car
-            status = agent.vel[1] > 0 ? "MOVIENDO" : "DETENIDO"
-            println("  Auto (id: $(agent.id)): pos=($(round(agent.pos[1], digits=2)), $(round(agent.pos[2], digits=2))), vel=$(round(agent.vel[1], digits=2)) [$status]")
+            speed = sqrt(agent.vel[1]^2 + agent.vel[2]^2)
+            total_speed += speed
+            car_count += 1
         end
     end
     
-    println()
-    
-    if i < 50
-        step!(model, 1)
-    end
+    return car_count > 0 ? total_speed / car_count : 0.0
 end
 
+function run_experiment(cars_per_street, steps = 200)
+    println("\n=== Experimento con $cars_per_street autos por calle ===")
+    model = initialize_model(cars_per_street)
+    
+    speeds = Float64[]
+    
+    for i in 1:steps
+        step!(model, 1)
+        avg_speed = calculate_average_speed(model)
+        push!(speeds, avg_speed)
+    end
+    
+    overall_avg = sum(speeds) / length(speeds)
+    println("Velocidad promedio: $(round(overall_avg, digits=4))")
+    
+    return overall_avg
+end
+
+println("=== SIMULACIÓN COMPLETA - PREGUNTA 3 ===\n")
+
+avg_3 = run_experiment(3)
+avg_5 = run_experiment(5)
+avg_7 = run_experiment(7)
+
+println("\n=== RESULTADOS FINALES ===")
+println("3 autos por calle: $(round(avg_3, digits=4))")
+println("5 autos por calle: $(round(avg_5, digits=4))")
+println("7 autos por calle: $(round(avg_7, digits=4))")

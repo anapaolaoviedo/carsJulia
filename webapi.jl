@@ -6,8 +6,10 @@ instances = Dict()
 
 route("/simulations", method = POST) do
     payload = jsonpayload()
+    
+    cars_per_street = get(payload, "cars_per_street", 5)
 
-    model = initialize_model()
+    model = initialize_model(cars_per_street)
     id = string(uuid1())
     instances[id] = model
 
@@ -19,7 +21,8 @@ route("/simulations", method = POST) do
             push!(cars, Dict(
                 "id" => agent.id,
                 "pos" => [agent.pos[1], agent.pos[2]],
-                "vel" => [agent.vel[1], agent.vel[2]]
+                "vel" => [agent.vel[1], agent.vel[2]],
+                "max_speed" => agent.max_speed
             ))
         elseif agent isa TrafficLight
             push!(trafficLights, Dict(
@@ -48,7 +51,8 @@ route("/simulations/:id") do
             push!(cars, Dict(
                 "id" => agent.id,
                 "pos" => [agent.pos[1], agent.pos[2]],
-                "vel" => [agent.vel[1], agent.vel[2]]
+                "vel" => [agent.vel[1], agent.vel[2]],
+                "max_speed" => agent.max_speed
             ))
         elseif agent isa TrafficLight
             push!(trafficLights, Dict(
@@ -61,7 +65,9 @@ route("/simulations/:id") do
         end
     end
     
-    json(Dict("cars" => cars, "trafficLights" => trafficLights))
+    avg_speed = calculate_average_speed(model)
+    
+    json(Dict("cars" => cars, "trafficLights" => trafficLights, "avgSpeed" => avg_speed))
 end
 
 
