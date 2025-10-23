@@ -11,24 +11,42 @@ route("/simulations", method = POST) do
     id = string(uuid1())
     instances[id] = model
 
-    cars = []
-    for car in allagents(model)
-        push!(cars, car)
+    # Para Pregunta 1: devolver sem en lugar de autos
+    trafficLights = []
+    for agent in allagents(model)
+        push!(trafficLights, Dict(
+            "id" => agent.id,
+            "pos" => [agent.pos[1], agent.pos[2]],
+            "color" => string(agent.color),  
+            "timer" => agent.timer,
+            "is_vertical" => agent.is_vertical
+        ))
     end
     
-    json(Dict("Location" => "/simulations/$id", "cars" => cars))
+    json(Dict("Location" => "/simulations/$id", "trafficLights" => trafficLights))
+
 end
 
 route("/simulations/:id") do
     println(payload(:id))
     model = instances[payload(:id)]
     run!(model, 1)
-    cars = []
-    for car in allagents(model)
-        push!(cars, car)
+    
+
+    trafficLights = []
+    for agent in allagents(model)
+        push!(trafficLights, Dict(
+            "id" => agent.id,
+            "pos" => [agent.pos[1], agent.pos[2]],
+            "color" => string(agent.color),  
+            "timer" => agent.timer,
+            "is_vertical" => agent.is_vertical
+        ))
     end
     
-    json(Dict("cars" => cars))
+    json(Dict("trafficLights" => trafficLights))
+    
+  
 end
 
 
