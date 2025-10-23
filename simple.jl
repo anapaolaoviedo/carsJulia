@@ -1,5 +1,6 @@
 using Agents, Random
 using StaticArrays: SVector
+using Distributions  
 
 @agent struct Car(ContinuousAgent{2,Float64})
 end
@@ -18,8 +19,9 @@ function initialize_model(extent = (25, 10))
 
     model = StandardABM(Car, space2d; rng, agent_step!, scheduler = Schedulers.Randomly())
 
-    for px in randperm(25)[1:8]
-        add_agent!(SVector{2, Float64}(px, 0.0), model; vel=SVector{2, Float64}(1.0, 0.0))
+    for px in randperm(25)[1:5]
+        random_speed = rand(Uniform(0.0, 1.0))
+        add_agent!(SVector{2, Float64}(px, 0.0), model; vel=SVector{2, Float64}(random_speed, 0.0))
     end
     model
 end
